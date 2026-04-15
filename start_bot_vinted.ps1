@@ -13,6 +13,23 @@ Write-Host "  BOT VINTED -- LANCEMENT EN PRODUCTION" -ForegroundColor Cyan
 Write-Host "  Dossier : $PSScriptRoot" -ForegroundColor Gray
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
+
+# Verifier si le bot tourne deja sur le port 8000 (AVANT le precheck)
+$portUsed = $false
+try {
+    $resp = Invoke-WebRequest -Uri "http://localhost:8000/api/status" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+    if ($resp.StatusCode -eq 200) { $portUsed = $true }
+} catch { $portUsed = $false }
+
+if ($portUsed) {
+    Write-Host "=======================================================" -ForegroundColor Green
+    Write-Host "  BOT DEJA EN COURS D EXECUTION" -ForegroundColor Green
+    Write-Host "  Dashboard: http://localhost:8000" -ForegroundColor Cyan
+    Write-Host "  Aucun redemarrage necessaire." -ForegroundColor Gray
+    Write-Host "=======================================================" -ForegroundColor Green
+    exit 0
+}
+
 Write-Host ">>> PRECHECK en cours..." -ForegroundColor Yellow
 
 python check_production.py
