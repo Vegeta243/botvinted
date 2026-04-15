@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: botvinted
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    plan: free
+    region: frankfurt
+    envVars:
+      - key: PYTHONIOENCODING
+        value: utf-8
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: VINTED_EMAIL
+        sync: false
+      - key: VINTED_PASSWORD
+        sync: false
+      - key: IMAP_EMAIL
+        sync: false
+      - key: IMAP_PASSWORD
+        sync: false
+      - key: IMAP_SERVER
+        sync: false
+    healthCheckPath: /api/status
