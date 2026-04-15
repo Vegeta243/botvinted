@@ -126,12 +126,27 @@ def setup_schedule():
 
 def demarrer_dashboard():
     """Lance le dashboard FastAPI en thread daemon"""
+    import socket
+    # Verifier si le port 8000 est deja utilise
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(('127.0.0.1', 8000))
+        sock.close()
+        if result == 0:
+            logger.warning("Port 8000 deja occupe - dashboard non demarre (une instance tourne peut-etre deja)")
+            return
+    except Exception:
+        pass
     try:
         import uvicorn
         from dashboard import app
+        logger.info("Demarrage dashboard sur http://0.0.0.0:8000")
         uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+    except OSError as e:
+        logger.error("Erreur demarrage dashboard (port occupe?): %s", e)
     except Exception as e:
-        logger.error(f"{ts()} Erreur demarrage dashboard: {e}")
+        logger.error("Erreur demarrage dashboard: %s", e)
 
 
 def demarrer_polling():
@@ -139,7 +154,7 @@ def demarrer_polling():
     try:
         commandes.polling_ventes_continu()
     except Exception as e:
-        logger.error(f"{ts()} Erreur polling ventes: {e}")
+        logger.error("Erreur polling ventes (thread arrete): %s", e)
 
 
 if __name__ == "__main__":
@@ -151,19 +166,23 @@ if __name__ == "__main__":
 
     time.sleep(2)
 
-    print(f"\n{'='*55}")
-    print(f"  BOT VINTED DEMARRE")
-    print(f"  Dashboard: http://localhost:8000")
-    print(f"  Tous les modules sont actifs")
-    print(f"{'='*55}\n")
+    print("\n" + "=" * 55)
+    print("  BOT VINTED DEMARRE")
+    print("  Dashboard: http://localhost:8000")
+    print("  Tous les modules sont actifs")
+    print("=" * 55 + "\n")
 
-    telegram_bot.envoyer_message_sync(
-        "Bot Vinted demarre\nDashboard: http://localhost:8000\nTous les modules sont actifs !"
-    )
+    # Notification Telegram de demarrage (non bloquant)
+    try:
+        telegram_bot.envoyer_message_sync(
+            "Bot Vinted demarre\nDashboard: http://localhost:8000\nTous les modules sont actifs !"
+        )
+    except Exception as e:
+        logger.warning("Notification Telegram de demarrage ignoree: %s", e)
 
     while True:
         try:
             schedule.run_pending()
         except Exception as e:
-            logger.error(f"{ts()} Erreur schedule: {e}")
+            logger.error("Erreur schedule: %s", e)
         time.sleep(60)

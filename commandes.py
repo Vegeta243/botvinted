@@ -214,15 +214,20 @@ def traiter_vente(vente_data: dict) -> bool:
 def polling_ventes_continu() -> None:
     """Boucle de polling des ventes - tourne en daemon thread"""
     logger.info("Demarrage polling ventes continu...")
+    # Initialisation avant la boucle pour eviter NameError si le premier acces DB echoue
+    intervalle = config.INTERVALLE_POLLING_VENTES
     while True:
         try:
             if database.get_setting("bot_actif") != "1":
                 time.sleep(60)
                 continue
 
-            intervalle = int(
-                database.get_setting("intervalle_polling_ventes") or config.INTERVALLE_POLLING_VENTES
-            )
+            try:
+                intervalle = int(
+                    database.get_setting("intervalle_polling_ventes") or config.INTERVALLE_POLLING_VENTES
+                )
+            except (ValueError, TypeError):
+                intervalle = config.INTERVALLE_POLLING_VENTES
 
             # Verification par email
             ventes_email = verifier_ventes_par_email()
@@ -236,10 +241,10 @@ def polling_ventes_continu() -> None:
 
             if ventes_email or ventes_api:
                 nb = len(ventes_email) + len(ventes_api)
-                logger.info(f"Polling: {nb} nouvelles ventes traitees")
+                logger.info("Polling: %d nouvelles ventes traitees", nb)
 
         except Exception as e:
-            logger.error(f"Erreur polling: {e}")
+            logger.error("Erreur polling ventes (thread continue): %s", e)
 
         time.sleep(intervalle)
 
