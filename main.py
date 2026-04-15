@@ -71,14 +71,23 @@ def job_scraping():
 
 
 def job_posting():
-    """Job de posting des annonces approuvees"""
+    """Job de posting des annonces approuvees (multi-compte avec rotation)"""
     if not should_run("posting_actif"):
         return
     logger.info(f"{ts()} === SESSION POSTING ===")
     database.log_session("posting", "debut", "")
     try:
+        # Recuperer le compte actif pour ce posting
+        compte = database.get_active_vinted_account()
+        if compte:
+            logger.info(f"{ts()} Compte actif: @{compte.get('username')} (ID={compte['id']})")
+        else:
+            logger.warning(f"{ts()} Aucun compte Vinted actif configure - posting ignore")
+            database.log_session("posting", "ignore", "Aucun compte Vinted actif")
+            return
+
         nb = asyncio.run(poster_vinted.session_posting())
-        database.log_session("posting", "succes", f"{nb} annonces postees")
+        database.log_session("posting", "succes", f"{nb} annonces postees via @{compte.get('username','?')}")
         logger.info(f"{ts()} Posting termine: {nb} annonces postees")
     except Exception as e:
         database.log_session("posting", "erreur", str(e))
@@ -169,13 +178,24 @@ if __name__ == "__main__":
     print("\n" + "=" * 55)
     print("  BOT VINTED DEMARRE")
     print("  Dashboard: http://localhost:8000")
+    print("  Multi-comptes: actif")
     print("  Tous les modules sont actifs")
     print("=" * 55 + "\n")
+
+    # Afficher le compte actif au demarrage
+    try:
+        compte = database.get_active_vinted_account()
+        if compte:
+            logger.info(f"Compte Vinted actif: @{compte['username']} (ID={compte['id']})")
+        else:
+            logger.warning("Aucun compte Vinted actif. Configurez-en un via le Dashboard > Comptes Vinted.")
+    except Exception:
+        pass
 
     # Notification Telegram de demarrage (non bloquant)
     try:
         telegram_bot.envoyer_message_sync(
-            "Bot Vinted demarre\nDashboard: http://localhost:8000\nTous les modules sont actifs !"
+            "Bot Vinted demarre\nDashboard: http://localhost:8000\nMulti-comptes actif — configurez vos comptes via Comptes Vinted !"
         )
     except Exception as e:
         logger.warning("Notification Telegram de demarrage ignoree: %s", e)

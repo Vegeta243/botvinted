@@ -188,6 +188,53 @@ def _get_produits_demo_pour_mot_cle(mot_cle: str, nb_max: int = 5) -> list:
     return correspondants[:nb_max]
 
 
+def ajouter_produit_manuel(titre: str, prix_achat: float, url_produit: str,
+                            photo_url: str, categorie: str) -> int:
+    """Ajoute un produit manuellement depuis n'importe quel fournisseur et retourne son ID"""
+    try:
+        if not titre or not titre.strip():
+            raise ValueError("Le titre est obligatoire")
+        if prix_achat <= 0:
+            raise ValueError("Le prix achat doit etre positif")
+        # Determine la source selon l'URL
+        if "aliexpress" in url_produit.lower():
+            source = "aliexpress"
+        elif "alibaba" in url_produit.lower():
+            source = "alibaba"
+        elif "1688" in url_produit.lower():
+            source = "1688"
+        elif "dhgate" in url_produit.lower():
+            source = "dhgate"
+        elif "temu" in url_produit.lower():
+            source = "temu"
+        else:
+            source = "manuel"
+
+        produit_id = database.sauvegarder_produit(
+            titre=titre.strip(),
+            prix_achat=float(prix_achat),
+            url=url_produit.strip(),
+            photo_url=photo_url.strip(),
+            categorie=categorie.strip() or estimer_categorie(titre),
+            source=source,
+        )
+        # Tenter de telecharger la photo si URL fournie
+        if photo_url.strip():
+            photo_locale = telecharger_photo(photo_url.strip(), produit_id)
+            if photo_locale:
+                conn = database.get_conn()
+                conn.execute("UPDATE produits SET photo_locale = ? WHERE id = ?", (photo_locale, produit_id))
+                conn.commit()
+                conn.close()
+
+        logger.info(f"Produit manuel ajoute #{produit_id}: {titre[:50]} ({source}) - {prix_achat}EUR")
+        database.log_session("import_manuel", "succes", f"Produit #{produit_id}: {titre[:50]}")
+        return produit_id
+    except Exception as e:
+        logger.error(f"Erreur ajout produit manuel: {e}")
+        raise
+
+
 def scraper_et_sauvegarder(mots_cles: list = None) -> int:
     """Scrape Aliexpress et sauvegarde les nouveaux produits en base"""
     try:
@@ -262,6 +309,9 @@ if __name__ == "__main__":
     assert estimer_categorie("montre femme rose") == "Montres"
     assert estimer_categorie("collier argent") == "Bijoux"
     print("Estimation categorie: OK")
+    # Test import manuel
+    pid = ajouter_produit_manuel("Test bracelet manuel", 3.99, "https://aliexpress.com/test", "https://picsum.photos/seed/test/400/400", "Bijoux")
+    print(f"Import manuel OK, produit ID={pid}")
     # Test scraping (utilise produits demo si Aliexpress bloque)
     nb = scraper_et_sauvegarder(["montre femme", "bracelet acier"])
     print(f"Produits scrapes et sauvegardes: {nb}")

@@ -24,6 +24,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("commandes")
 
+# File d'evenements live pour le dashboard SSE
+_vente_events = []
+
+
+def push_vente_event(message: str, vente: dict = None) -> None:
+    """Ajoute un evenement de vente dans la file SSE"""
+    entree = {
+        "t": datetime.now().strftime("%H:%M:%S"),
+        "msg": message,
+        "vente": vente or {},
+    }
+    _vente_events.append(entree)
+    if len(_vente_events) > 100:
+        _vente_events.pop(0)
+
+
+def get_vente_events() -> list:
+    """Retourne les evenements de vente recents"""
+    return list(_vente_events)
+
 
 def decoder_sujet(sujet_brut) -> str:
     """Decode un sujet d'email encode MIME"""
@@ -202,6 +222,10 @@ def traiter_vente(vente_data: dict) -> bool:
 
         if vente_complete:
             telegram_bot.envoyer_alerte_vente(dict(vente_complete))
+            push_vente_event(
+                f"VENTE: {dict(vente_complete).get('titre_vinted','?')[:40]} - {montant:.2f}EUR - {acheteur}",
+                dict(vente_complete),
+            )
 
         logger.info(f"Vente #{vente_id} traitee: {montant:.2f}EUR - {acheteur}")
         return True

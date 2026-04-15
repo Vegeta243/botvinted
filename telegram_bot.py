@@ -37,7 +37,16 @@ def envoyer_message_sync(texte: str, chat_id: str = None, parse_mode: str = "HTM
             logger.info(f"Message Telegram envoye: {texte[:50]}...")
             return True
         else:
-            logger.error(f"Erreur Telegram API: {data.get('description')}")
+            desc = data.get('description', '')
+            if 'chat not found' in desc.lower():
+                print("")
+                print("⚠️  ACTION REQUISE — Telegram non configure")
+                print("   Ouvrez Telegram, recherchez @VintedAlertElliot_bot et cliquez sur Démarrer.")
+                print("   Ensuite relancez le bot ou retestez depuis Paramètres.")
+                print("")
+                logger.warning("Telegram: chat not found — l'utilisateur doit envoyer /start au bot @VintedAlertElliot_bot")
+            else:
+                logger.error(f"Erreur Telegram API: {desc}")
             return False
     except Exception as e:
         logger.error(f"Erreur envoi message Telegram: {e}")

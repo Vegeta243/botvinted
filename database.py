@@ -75,6 +75,7 @@ def init_db() -> None:
                 photo_url TEXT,
                 photo_locale TEXT,
                 categorie TEXT,
+                source TEXT DEFAULT 'aliexpress',
                 disponible INTEGER DEFAULT 1,
                 date_ajout TEXT DEFAULT CURRENT_TIMESTAMP
             )
@@ -92,6 +93,7 @@ def init_db() -> None:
                 statut TEXT DEFAULT 'en_attente',
                 vinted_id TEXT,
                 vues INTEGER DEFAULT 0,
+                compte_vinted_id INTEGER REFERENCES vinted_accounts(id),
                 date_creation TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -109,6 +111,23 @@ def init_db() -> None:
                 colis_envoye INTEGER DEFAULT 0,
                 numero_suivi TEXT,
                 date_vente TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Table vinted_accounts
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vinted_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                email TEXT,
+                password TEXT,
+                bio TEXT,
+                photo_path TEXT,
+                cookies_file TEXT,
+                is_active INTEGER DEFAULT 0,
+                last_used TEXT,
+                date_creation TEXT DEFAULT CURRENT_TIMESTAMP,
+                notes TEXT
             )
         """)
 
@@ -154,6 +173,8 @@ def init_db() -> None:
             ("telegram_validation_annonces", "1", "Validation annonces via Telegram"),
             ("intervalle_republication", "72", "Heures avant republication annonces"),
             ("recap_colis_quotidien", "1", "Recap colis quotidien via Telegram"),
+            ("default_vinted_account_id", "", "ID du compte Vinted actif par defaut"),
+            ("posting_live_status", "", "Statut en direct du posting (JSON)"),
         ]
         for cle, valeur, description in parametres_defaut:
             cur.execute(
@@ -163,7 +184,7 @@ def init_db() -> None:
 
         conn.commit()
         conn.close()
-        print("Base de donnees initialisee avec succes (5 tables + parametres par defaut)")
+        print("Base de donnees initialisee avec succes (6 tables + parametres par defaut)")
     except Exception as e:
         print(f"Erreur initialisation DB: {e}")
         raise
@@ -214,14 +235,14 @@ def get_all_settings() -> list:
 
 def sauvegarder_produit(
     titre: str, prix_achat: float, url: str, photo_url: str, categorie: str,
-    photo_locale: str = ""
+    photo_locale: str = "", source: str = "aliexpress"
 ) -> int:
     """Insere un produit et retourne son ID"""
     try:
         conn = get_conn()
         cur = conn.execute(
-            "INSERT INTO produits (titre, prix_achat, url_aliexpress, photo_url, photo_locale, categorie) VALUES (?, ?, ?, ?, ?, ?)",
-            (titre, prix_achat, url, photo_url, photo_locale, categorie),
+            "INSERT INTO produits (titre, prix_achat, url_aliexpress, photo_url, photo_locale, categorie, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (titre, prix_achat, url, photo_url, photo_locale, categorie, source),
         )
         produit_id = cur.lastrowid
         conn.commit()
@@ -753,8 +774,159 @@ def get_stats_dashboard() -> dict:
         }
 
 
+# ─── COMPTES VINTED ───────────────────────────────────────────────────────────
+
+def get_tous_comptes_vinted() -> list:
+    """Retourne tous les comptes Vinted"""
+    try:
+        conn = get_conn()
+        rows = conn.execute("SELECT * FROM vinted_accounts ORDER BY is_active DESC, id ASC").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"Erreur get_tous_comptes_vinted: {e}")
+        return []
+
+
+def get_compte_vinted_par_id(compte_id: int) -> Optional[dict]:
+    """Retourne un compte Vinted par son ID"""
+    try:
+        conn = get_conn()
+        row = conn.execute("SELECT * FROM vinted_accounts WHERE id = ?", (compte_id,)).fetchone()
+        conn.close()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Erreur get_compte_vinted_par_id: {e}")
+        return None
+
+
+def get_active_vinted_account() -> Optional[dict]:
+    """Retourne le compte Vinted actif"""
+    try:
+        conn = get_conn()
+        row = conn.execute("SELECT * FROM vinted_accounts WHERE is_active = 1 ORDER BY last_used ASC LIMIT 1").fetchone()
+        conn.close()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Erreur get_active_vinted_account: {e}")
+        return None
+
+
+def ajouter_compte_vinted(username: str, email: str = "", password: str = "",
+                           bio: str = "", photo_path: str = "", notes: str = "") -> int:
+    """Ajoute un nouveau compte Vinted et retourne son ID"""
+    try:
+        conn = get_conn()
+        # Premier compte => actif par defaut
+        nb = conn.execute("SELECT COUNT(*) FROM vinted_accounts").fetchone()[0]
+        is_active = 1 if nb == 0 else 0
+        cur = conn.execute(
+            "INSERT INTO vinted_accounts (username, email, password, bio, photo_path, is_active, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (username, email, password, bio, photo_path, is_active, notes),
+        )
+        compte_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return compte_id
+    except Exception as e:
+        print(f"Erreur ajouter_compte_vinted: {e}")
+        raise
+
+
+def update_compte_vinted(compte_id: int, **kwargs) -> None:
+    """Met a jour les champs d'un compte Vinted"""
+    try:
+        champs_autorises = {"username", "email", "password", "bio", "photo_path", "cookies_file", "is_active", "notes"}
+        updates = []
+        params = []
+        for k, v in kwargs.items():
+            if k in champs_autorises:
+                updates.append(f"{k} = ?")
+                params.append(v)
+        if not updates:
+            return
+        params.append(compte_id)
+        conn = get_conn()
+        conn.execute(f"UPDATE vinted_accounts SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erreur update_compte_vinted: {e}")
+        raise
+
+
+def supprimer_compte_vinted(compte_id: int) -> None:
+    """Supprime un compte Vinted"""
+    try:
+        conn = get_conn()
+        conn.execute("DELETE FROM vinted_accounts WHERE id = ?", (compte_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erreur supprimer_compte_vinted: {e}")
+        raise
+
+
+def switch_account(compte_id: int) -> None:
+    """Active un compte Vinted specifique (desactive les autres)"""
+    try:
+        conn = get_conn()
+        conn.execute("UPDATE vinted_accounts SET is_active = 0")
+        conn.execute("UPDATE vinted_accounts SET is_active = 1 WHERE id = ?", (compte_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erreur switch_account: {e}")
+        raise
+
+
+def save_account_cookies(compte_id: int, cookies_file: str) -> None:
+    """Sauvegarde le chemin du fichier cookies d'un compte"""
+    try:
+        conn = get_conn()
+        conn.execute(
+            "UPDATE vinted_accounts SET cookies_file = ?, last_used = CURRENT_TIMESTAMP WHERE id = ?",
+            (cookies_file, compte_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erreur save_account_cookies: {e}")
+        raise
+
+
+def marquer_compte_utilise(compte_id: int) -> None:
+    """Met a jour la date de derniere utilisation"""
+    try:
+        conn = get_conn()
+        conn.execute(
+            "UPDATE vinted_accounts SET last_used = CURRENT_TIMESTAMP WHERE id = ?",
+            (compte_id,),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erreur marquer_compte_utilise: {e}")
+
+
 if __name__ == "__main__":
     init_db()
+    # Migration: ajout colonnes manquantes si DB existante
+    try:
+        conn = get_conn()
+        try:
+            conn.execute("ALTER TABLE produits ADD COLUMN source TEXT DEFAULT 'aliexpress'")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE annonces ADD COLUMN compte_vinted_id INTEGER REFERENCES vinted_accounts(id)")
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
+    except Exception:
+        pass
     # Verification des tables
     conn = get_conn()
     tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
