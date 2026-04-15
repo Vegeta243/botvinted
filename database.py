@@ -5,9 +5,54 @@ from datetime import datetime, timedelta
 from typing import Optional
 import config
 
+# Connexion partagee pour les bases en memoire (tests)
+_shared_conn = None
+
+
+class _NonClosingConnection:
+    """Proxy qui empeche la fermeture de la connexion partagee en memoire"""
+    def __init__(self, conn):
+        self._conn = conn
+    def execute(self, *a, **kw):
+        return self._conn.execute(*a, **kw)
+    def executemany(self, *a, **kw):
+        return self._conn.executemany(*a, **kw)
+    def cursor(self):
+        return self._conn.cursor()
+    def commit(self):
+        return self._conn.commit()
+    def rollback(self):
+        return self._conn.rollback()
+    def close(self):
+        pass  # Ne pas fermer la connexion partagee
+    @property
+    def row_factory(self):
+        return self._conn.row_factory
+    @row_factory.setter
+    def row_factory(self, val):
+        self._conn.row_factory = val
+
+
+def reset_shared_conn():
+    """Reinitialise la connexion partagee (utilise par les tests)"""
+    global _shared_conn
+    if _shared_conn is not None:
+        try:
+            _shared_conn.close()
+        except Exception:
+            pass
+    _shared_conn = None
+
 
 def get_conn():
     """Retourne une connexion SQLite avec row_factory pour dictionnaires"""
+    global _shared_conn
+    if config.DB_PATH == ":memory:":
+        if _shared_conn is None:
+            _shared_conn = sqlite3.connect(":memory:", check_same_thread=False)
+            _shared_conn.row_factory = sqlite3.Row
+            _shared_conn.execute("PRAGMA foreign_keys = ON")
+        return _NonClosingConnection(_shared_conn)
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
