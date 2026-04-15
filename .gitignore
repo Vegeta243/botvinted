@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+bot_vinted.db
+photos/
+logs/
+vinted_cookies.json
