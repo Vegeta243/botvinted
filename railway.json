@@ -5,6 +5,6 @@
   "deploy": {
     "startCommand": "python main.py",
     "healthcheckPath": "/api/status",
-    "healthcheckTimeout": 30
+    "healthcheckTimeout": 120
   }
 }

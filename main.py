@@ -136,22 +136,23 @@ def setup_schedule():
 def demarrer_dashboard():
     """Lance le dashboard FastAPI en thread daemon"""
     import socket
-    # Verifier si le port 8000 est deja utilise
+    port = int(os.environ.get("PORT", 8000))
+    # Verifier si le port est deja utilise
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(1)
-        result = sock.connect_ex(('127.0.0.1', 8000))
+        result = sock.connect_ex(('127.0.0.1', port))
         sock.close()
         if result == 0:
-            logger.warning("Port 8000 deja occupe - dashboard non demarre (une instance tourne peut-etre deja)")
+            logger.warning("Port %d deja occupe - dashboard non demarre (une instance tourne peut-etre deja)", port)
             return
     except Exception:
         pass
     try:
         import uvicorn
         from dashboard import app
-        logger.info("Demarrage dashboard sur http://0.0.0.0:8000")
-        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+        logger.info("Demarrage dashboard sur http://0.0.0.0:%d", port)
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
     except OSError as e:
         logger.error("Erreur demarrage dashboard (port occupe?): %s", e)
     except Exception as e:
